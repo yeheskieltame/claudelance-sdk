@@ -1,4 +1,4 @@
-import type { Bounty } from '@claudelance/types';
+import type { Bounty } from '@yeheskieltame/claudelance-types';
 import { CUSD_DECIMALS } from './constants.js';
 
 /**
