@@ -16,7 +16,7 @@ import {
   MAINNET,
   SEPOLIA,
   type Bounty,
-} from '@claudelance/types';
+} from '@yeheskieltame/claudelance-types';
 
 import { chainForNetwork, type NetworkKey } from './chain.js';
 import { CUSD_ABI } from './cusd-abi.js';
@@ -91,7 +91,7 @@ export class ClaudelanceClient {
   /**
    * Convenience: build a fully-wired client from a private key + network
    * key. Resolves the canonical Claudelance core address for the chosen
-   * network from `@claudelance/types`.
+   * network from `@yeheskieltame/claudelance-types`.
    */
   static fromPrivateKey(opts: FromPrivateKeyOptions): ClaudelanceClient {
     const chain = chainForNetwork(opts.network);
