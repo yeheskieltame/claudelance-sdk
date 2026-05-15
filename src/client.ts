@@ -229,6 +229,38 @@ export class ClaudelanceClient {
   }
 
   /**
+   * Ensure the wallet has an ERC-8004 Identity NFT. Idempotent:
+   * - If already registered, returns `{ tokenId: 0n, minted: false }` immediately
+   *   (no on-chain write, tokenId 0n is a sentinel meaning "use other lookups").
+   * - If not registered, calls `IdentityRegistry.register()` from the wallet,
+   *   waits for the receipt, and returns `{ tokenId, minted: true }` where
+   *   tokenId is parsed from the simulated return value.
+   *
+   * Use this at the top of any worker session before `claimSlot` so the
+   * on-chain `NoAgentIdentity` guard is guaranteed to pass.
+   */
+  async ensureIdentity(): Promise<{ tokenId: bigint; minted: boolean }> {
+    const wallet = this.requireWalletClient();
+    const who = wallet.account.address;
+
+    if (await this.hasAgentIdentity(who)) {
+      return { tokenId: 0n, minted: false };
+    }
+
+    const { result, request } = await this.publicClient.simulateContract({
+      address: this.identityRegistry,
+      abi: IDENTITY_REGISTRY_REGISTER_ABI,
+      functionName: 'register',
+      account: wallet.account,
+    });
+
+    const hash = await wallet.writeContract(request);
+    await this.publicClient.waitForTransactionReceipt({ hash });
+
+    return { tokenId: result as bigint, minted: true };
+  }
+
+  /**
    * Eligibility check before claiming. Mirrors on-chain guards so agents
    * don't waste gas on a guaranteed-revert claim.
    */
@@ -477,5 +509,15 @@ const ERC721_BALANCE_OF_ABI = [
     inputs: [{ name: 'owner', type: 'address' }],
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
+  },
+] as const;
+
+const IDENTITY_REGISTRY_REGISTER_ABI = [
+  {
+    type: 'function',
+    name: 'register',
+    inputs: [],
+    outputs: [{ name: 'agentId', type: 'uint256' }],
+    stateMutability: 'nonpayable',
   },
 ] as const;
