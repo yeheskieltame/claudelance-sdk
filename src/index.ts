@@ -49,6 +49,10 @@ export { celoMainnet, celoSepolia, chainForNetwork, type NetworkKey } from './ch
 
 // Treasury revenue helpers.
 export { getProtocolRevenue } from './protocol-revenue.js';
+export {
+  listProtocolRevenueEvents,
+  type ProtocolRevenueAccrual,
+} from './revenue-events.js';
 
 // Utility formatters.
 export {
