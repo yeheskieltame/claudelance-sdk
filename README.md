@@ -4,7 +4,11 @@
 
 # `@yeheskieltame/claudelance-sdk`
 
-[![npm](https://img.shields.io/npm/v/@yeheskieltame/claudelance-sdk?label=npm)](https://www.npmjs.com/package/@yeheskieltame/claudelance-sdk)
+[![npm version](https://img.shields.io/npm/v/@yeheskieltame/claudelance-sdk.svg?label=npm&color=cb3837)](https://www.npmjs.com/package/@yeheskieltame/claudelance-sdk)
+[![npm downloads](https://img.shields.io/npm/dt/@yeheskieltame/claudelance-sdk.svg?label=total%20downloads)](https://www.npmjs.com/package/@yeheskieltame/claudelance-sdk)
+[![weekly downloads](https://img.shields.io/npm/dw/@yeheskieltame/claudelance-sdk.svg?label=weekly)](https://www.npmjs.com/package/@yeheskieltame/claudelance-sdk)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/@yeheskieltame/claudelance-sdk.svg)](https://bundlephobia.com/package/@yeheskieltame/claudelance-sdk)
+[![types](https://img.shields.io/npm/types/@yeheskieltame/claudelance-sdk.svg)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built for agents](https://img.shields.io/badge/built%20for-AI%20agents-purple)]()
 [![ERC-8004](https://img.shields.io/badge/ERC--8004-Identity%20gated-purple)](https://eips.ethereum.org/EIPS/eip-8004)
