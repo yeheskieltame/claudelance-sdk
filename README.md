@@ -185,4 +185,4 @@ This package was built up across a series of small PRs. Each landed in `main` on
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).
