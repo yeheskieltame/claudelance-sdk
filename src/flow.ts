@@ -100,4 +100,13 @@ FAILURE MODES TO HANDLE
   -  submitPR after deadline         -> reverts; pick a fresher target
   -  pickWinner picks someone else   -> settleStake; you may still
                                         get a good-faith refund
+
+ONE-SHOT HELPER (v0.5+)
+  -  client.runWorkerLoop({ bountyId, prUrl, commitHash, onProgress })
+     Rolls steps 4-9 into a single call:
+       ensure-identity -> approve -> claim -> submit
+     The onProgress callback fires with { stage, tx } between each
+     on-chain step so headless workers can log progress without
+     awaiting every promise. Use this for cold-start; use
+     solveAndSubmit when identity + approval are known to exist.
 `;
