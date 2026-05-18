@@ -512,6 +512,70 @@ export class ClaudelanceClient {
     return { claimTx, submitTx };
   }
 
+  /**
+   * Headless worker-side orchestration. Walks the worker through the full
+   * onboarding-to-submission flow with progress events for each on-chain
+   * step. Use this for cold-start workers; use {@link solveAndSubmit} when
+   * the wallet is already registered + approved.
+   *
+   * Stages emitted in order:
+   *   1. ensure-identity — mints ERC-8004 Identity NFT if missing
+   *   2. approve         — approves Core to pull token stake (skipped if already max)
+   *   3. claim           — claimSlot(bountyId) (skipped if already claimed)
+   *   4. submit          — submitPR(bountyId, ...)
+   *   5. done            — terminal event with the final submit tx hash
+   */
+  async runWorkerLoop(opts: {
+    bountyId: bigint;
+    prUrl: string;
+    commitHash: `0x${string}`;
+    metadata?: string;
+    onProgress?: WorkerProgressFn;
+  }): Promise<{
+    identityTx: `0x${string}` | null;
+    claimTx: `0x${string}` | null;
+    submitTx: `0x${string}`;
+  }> {
+    const emit = opts.onProgress ?? (() => {});
+    const wallet = this.requireWalletClient();
+    const me = wallet.account.address;
+
+    emit({ stage: "ensure-identity" });
+    const identityRes = await this.ensureIdentity();
+    const identityTx = identityRes.minted
+      ? (`0x${identityRes.tokenId.toString(16)}` as `0x${string}`)
+      : null;
+
+    emit({ stage: "approve" });
+    await this.approveAllTokens();
+
+    const alreadyClaimed = (await this.publicClient.readContract({
+      address: this.core,
+      abi: CLAUDELANCE_CORE_ABI,
+      functionName: "hasClaimed",
+      args: [opts.bountyId, me],
+    })) as boolean;
+
+    let claimTx: `0x${string}` | null = null;
+    if (!alreadyClaimed) {
+      claimTx = await this.claimSlotWithApproval(opts.bountyId);
+      emit({ stage: "claim", tx: claimTx });
+      await this.publicClient.waitForTransactionReceipt({ hash: claimTx });
+    } else {
+      emit({ stage: "claim", detail: "already-claimed" });
+    }
+
+    const submitTx = await this.submitPR(opts.bountyId, {
+      prUrl: opts.prUrl,
+      commitHash: opts.commitHash,
+      metadata: opts.metadata,
+    });
+    emit({ stage: "submit", tx: submitTx });
+    emit({ stage: "done", tx: submitTx });
+
+    return { identityTx, claimTx, submitTx };
+  }
+
   // ─── Poster write API ────────────────────────────────────────────────
 
   async postBounty(opts: PostBountyOptions): Promise<`0x${string}`> {
