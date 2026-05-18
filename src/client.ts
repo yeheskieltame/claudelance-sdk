@@ -67,6 +67,25 @@ export type SubmitPROptions = {
   metadata?: string;
 };
 
+/**
+ * Stages emitted by {@link ClaudelanceClient.runWorkerLoop} so callers can
+ * surface progress in headless logs or a UI progress bar.
+ */
+export type WorkerStage =
+  | "ensure-identity"
+  | "approve"
+  | "claim"
+  | "submit"
+  | "done";
+
+export type WorkerProgress = {
+  stage: WorkerStage;
+  tx?: `0x${string}`;
+  detail?: string;
+};
+
+export type WorkerProgressFn = (progress: WorkerProgress) => void;
+
 /** Payload accepted by {@link ClaudelanceClient.postBounty} (open marketplace). */
 export type PostBountyOptions = {
   /** ERC20 used for escrow + payout. Must be whitelisted on chain. */
