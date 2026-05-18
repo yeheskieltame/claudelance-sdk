@@ -44,6 +44,9 @@ export type {
   SubmitPROptions,
   PostBountyOptions,
   PostDirectHireOptions,
+  WorkerStage,
+  WorkerProgress,
+  WorkerProgressFn,
 } from './client.js';
 export { celoMainnet, celoSepolia, chainForNetwork, type NetworkKey } from './chain.js';
 
