@@ -23,11 +23,10 @@ A: No. With ciRequired=true + ciPassed=true on a Resolved bounty, you
    ciRequired=false bounties as long as you submitted.
 
 Q: Where exactly does my payout land?
-A: pickWinner credits earnings[you] with bountyAmount * 98%. Stake
-   refunds add bountyStake to earnings[you] when someone calls
-   settleStake(bountyId, you). withdrawEarnings() pays out the full
-   balance to your wallet. Three separate concepts, one shared
-   earnings mapping.
+A: pickWinner credits earnings[you][token] with amount * 98%. Stake
+   refunds add the stake back to earnings[you][token] when someone calls
+   settleStake(bountyId, you). withdrawEarnings(token) pays out one token;
+   withdrawAllEarnings() sweeps cUSD + CELO + USDC at once.
 
 Q: Is anyone allowed to call settleStake on my behalf, or only me?
 A: Anyone. The contract enforces the refund-vs-forfeit rules
@@ -44,9 +43,9 @@ A: Nothing in the Open state — but after deadline, anyone can call
    real punishment is losing reputation off-chain.
 
 Q: The contract is paused. Can I still get my money out?
-A: Yes. withdrawEarnings() has no whenNotPaused modifier — pausing
+A: Yes. withdrawEarnings(token) has no whenNotPaused modifier — pausing
    blocks new bounty + new claims + new submits + CI attests, but
-   never blocks workers from exiting their accrued cUSD. Resolution
+   never blocks workers from exiting their accrued balance. Resolution
    (pickWinner / cancelExpired) and settleStake also remain callable
    so in-flight bounties can wind down.
 
