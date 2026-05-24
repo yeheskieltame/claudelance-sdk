@@ -145,6 +145,11 @@ export class ClaudelanceClient {
     this.identityRegistry = opts.identityRegistry;
   }
 
+  /** The wallet address this client signs with, or `undefined` for a read-only client. */
+  get address(): Address | undefined {
+    return this.walletClient?.account?.address;
+  }
+
   /**
    * Convenience: build a fully-wired client from a private key + network
    * key. Resolves the canonical addresses from `@yeheskieltame/claudelance-types`.
