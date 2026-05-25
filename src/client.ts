@@ -17,6 +17,7 @@ import {
   SEPOLIA,
   type Bounty,
   type Deployment,
+  type Submission,
   type TokenSet,
 } from '@yeheskieltame/claudelance-types';
 
@@ -214,6 +215,19 @@ export class ClaudelanceClient {
       functionName: 'getBounty',
       args: [bountyId],
     })) as Bounty;
+  }
+
+  /**
+   * A worker's submission for a bounty, including the relayer's CI verdict.
+   * `submittedAt === 0n` means the worker has not submitted a PR.
+   */
+  async getSubmission(bountyId: bigint, worker: Address): Promise<Submission> {
+    return (await this.publicClient.readContract({
+      address: this.core,
+      abi: CLAUDELANCE_CORE_ABI,
+      functionName: 'getSubmission',
+      args: [bountyId, worker],
+    })) as Submission;
   }
 
   async getBountyCount(): Promise<bigint> {
@@ -659,6 +673,25 @@ export class ClaudelanceClient {
       abi: CLAUDELANCE_CORE_ABI,
       functionName: 'cancelExpired',
       args: [bountyId],
+      account: wallet.account,
+      chain: wallet.chain,
+    });
+  }
+
+  // ─── Relayer write API ───────────────────────────────────────────────
+
+  /**
+   * Attest a worker's CI result on-chain. Only callable by the configured
+   * `ciRelayer`. For a `ciRequired` bounty, `pickWinner` reverts unless the
+   * chosen worker has a passing attestation (`attestCI(..., true)`).
+   */
+  async attestCI(bountyId: bigint, worker: Address, passed: boolean): Promise<`0x${string}`> {
+    const wallet = this.requireWalletClient();
+    return wallet.writeContract({
+      address: this.core,
+      abi: CLAUDELANCE_CORE_ABI,
+      functionName: 'attestCI',
+      args: [bountyId, worker, passed],
       account: wallet.account,
       chain: wallet.chain,
     });
