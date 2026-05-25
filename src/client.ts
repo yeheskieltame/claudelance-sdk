@@ -568,9 +568,6 @@ export class ClaudelanceClient {
       ? (`0x${identityRes.tokenId.toString(16)}` as `0x${string}`)
       : null;
 
-    emit({ stage: "approve" });
-    await this.approveAllTokens();
-
     const alreadyClaimed = (await this.publicClient.readContract({
       address: this.core,
       abi: CLAUDELANCE_CORE_ABI,
@@ -580,6 +577,10 @@ export class ClaudelanceClient {
 
     let claimTx: `0x${string}` | null = null;
     if (!alreadyClaimed) {
+      // claimSlotWithApproval approves exactly the bounty's token for the
+      // stake (one approval, and only when the allowance is short) then claims.
+      // Pre-approving all three tokens would waste two tx for a one-shot worker.
+      emit({ stage: "approve" });
       claimTx = await this.claimSlotWithApproval(opts.bountyId);
       emit({ stage: "claim", tx: claimTx });
       await this.publicClient.waitForTransactionReceipt({ hash: claimTx });
