@@ -2,6 +2,7 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  parseEventLogs,
   type Account,
   type Address,
   type Chain,
@@ -23,6 +24,10 @@ import {
 
 import { chainForNetwork, type NetworkKey } from './chain.js';
 import { CUSD_ABI } from './cusd-abi.js';
+
+// setTimeout is a runtime global in both Node and browsers, but the SDK's
+// tsconfig keeps `lib` to ES2022 (no DOM/node) to stay portable, so declare it.
+declare function setTimeout(handler: () => void, timeout: number): unknown;
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
@@ -228,6 +233,29 @@ export class ClaudelanceClient {
       functionName: 'getSubmission',
       args: [bountyId, worker],
     })) as Submission;
+  }
+
+  /**
+   * Poll `getBounty` until `predicate` holds (or attempts run out), returning
+   * the last-read bounty. Use this to bridge a write and a dependent read:
+   * public RPCs like forno load-balance, so a read issued right after a mined
+   * write can hit a lagging node and return pre-write state. e.g. after
+   * `pickWinner`, `await waitForBounty(id, (b) => b.status === 1)` before
+   * `settleStake` so it doesn't revert `BountyNotResolved`.
+   */
+  async waitForBounty(
+    bountyId: bigint,
+    predicate: (bounty: Bounty) => boolean,
+    opts?: { attempts?: number; intervalMs?: number },
+  ): Promise<Bounty> {
+    const attempts = opts?.attempts ?? 10;
+    const intervalMs = opts?.intervalMs ?? 2500;
+    let bounty = await this.getBounty(bountyId);
+    for (let i = 1; i < attempts && !predicate(bounty); i++) {
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), intervalMs));
+      bounty = await this.getBounty(bountyId);
+    }
+    return bounty;
   }
 
   async getBountyCount(): Promise<bigint> {
@@ -633,6 +661,19 @@ export class ClaudelanceClient {
     return this.postBounty(opts);
   }
 
+  /**
+   * Post an open bounty (with approval) and return its id parsed from the
+   * `BountyPosted` event in the receipt. Prefer this over `postBounty` +
+   * `getBountyCount()`: forno load-balances, so a count read right after the
+   * post can hit a lagging node and return the pre-post value.
+   */
+  async postBountyAndGetId(
+    opts: PostBountyOptions,
+  ): Promise<{ hash: `0x${string}`; bountyId: bigint }> {
+    const hash = await this.postBountyWithApproval(opts);
+    return { hash, bountyId: await this.bountyIdFromReceipt(hash) };
+  }
+
   async postDirectHire(opts: PostDirectHireOptions): Promise<`0x${string}`> {
     const wallet = this.requireWalletClient();
     return wallet.writeContract({
@@ -659,6 +700,18 @@ export class ClaudelanceClient {
     const wallet = this.requireWalletClient();
     await this.ensureAllowance(opts.token, wallet.account.address, opts.amount);
     return this.postDirectHire(opts);
+  }
+
+  /**
+   * Post a direct-hire bounty (with approval) and return its id parsed from the
+   * `BountyPosted` event in the receipt. Prefer this over `postDirectHire` +
+   * `getBountyCount()` — see {@link postBountyAndGetId}.
+   */
+  async postDirectHireAndGetId(
+    opts: PostDirectHireOptions,
+  ): Promise<{ hash: `0x${string}`; bountyId: bigint }> {
+    const hash = await this.postDirectHireWithApproval(opts);
+    return { hash, bountyId: await this.bountyIdFromReceipt(hash) };
   }
 
   async pickWinner(bountyId: bigint, winner: Address): Promise<`0x${string}`> {
@@ -729,6 +782,24 @@ export class ClaudelanceClient {
       chain: wallet.chain,
     });
     await this.publicClient.waitForTransactionReceipt({ hash });
+  }
+
+  /**
+   * @internal Wait for a post tx and pull the new bounty id out of the
+   * `BountyPosted` event — reliable regardless of read-replica lag.
+   */
+  protected async bountyIdFromReceipt(hash: `0x${string}`): Promise<bigint> {
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    const events = parseEventLogs({
+      abi: CLAUDELANCE_CORE_ABI,
+      eventName: 'BountyPosted',
+      logs: receipt.logs,
+    });
+    const bountyId = (events[0] as { args?: { bountyId?: bigint } } | undefined)?.args?.bountyId;
+    if (bountyId === undefined) {
+      throw new Error('[ClaudelanceClient] no BountyPosted event in post receipt');
+    }
+    return bountyId;
   }
 
   /** @internal */
