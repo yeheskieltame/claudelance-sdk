@@ -528,6 +528,9 @@ export class ClaudelanceClient {
       commitHash: opts.commitHash,
       metadata: opts.metadata,
     });
+    // Wait for the submission to be mined so a caller can safely chain
+    // pickWinner — otherwise it can race ahead of `submittedAt` being set.
+    await this.publicClient.waitForTransactionReceipt({ hash: submitTx });
     return { claimTx, submitTx };
   }
 
@@ -590,6 +593,9 @@ export class ClaudelanceClient {
       metadata: opts.metadata,
     });
     emit({ stage: "submit", tx: submitTx });
+    // Wait for the submission to be mined before signalling done, so the
+    // poster can chain pickWinner without racing `submittedAt`.
+    await this.publicClient.waitForTransactionReceipt({ hash: submitTx });
     emit({ stage: "done", tx: submitTx });
 
     return { identityTx, claimTx, submitTx };
