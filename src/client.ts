@@ -814,6 +814,29 @@ export class ClaudelanceClient {
     });
   }
 
+  /**
+   * Resolve a bounty AND reward the winner's ERC-8004 reputation in one call:
+   * `pickWinner` then `giveFeedback` about the winner's agent. The Core never
+   * touches the Reputation registry, so this is how reputation accrues per
+   * resolved bounty. Pass `agentId` to skip the (log-scanning) `agentIdOf`
+   * lookup. Returns `feedbackTx: null` if the winner has no resolvable agent id.
+   */
+  async pickWinnerAndReward(
+    bountyId: bigint,
+    winner: Address,
+    opts?: {
+      agentId?: bigint;
+      feedback?: Parameters<ClaudelanceClient['giveFeedback']>[1];
+    },
+  ): Promise<{ pickTx: `0x${string}`; feedbackTx: `0x${string}` | null }> {
+    const pickTx = await this.pickWinner(bountyId, winner);
+    await this.publicClient.waitForTransactionReceipt({ hash: pickTx });
+    const agentId = opts?.agentId ?? (await this.agentIdOf(winner));
+    if (agentId === null) return { pickTx, feedbackTx: null };
+    const feedbackTx = await this.giveFeedback(agentId, opts?.feedback);
+    return { pickTx, feedbackTx };
+  }
+
   async cancelExpired(bountyId: bigint): Promise<`0x${string}`> {
     const wallet = this.requireWalletClient();
     return wallet.writeContract({
