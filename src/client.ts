@@ -63,6 +63,8 @@ export type ClaudelanceClientOptions = {
   tokens: TokenSet;
   /** ERC-8004 Identity Registry. Workers must hold a token here to claimSlot. */
   identityRegistry: Address;
+  /** ERC-8004 Reputation Registry — feedback (reputation) about agents. */
+  reputationRegistry: Address;
 };
 
 /** Optional payload accepted by {@link ClaudelanceClient.submitPR}. */
@@ -142,6 +144,7 @@ export class ClaudelanceClient {
   readonly core: Address;
   readonly tokens: TokenSet;
   readonly identityRegistry: Address;
+  readonly reputationRegistry: Address;
 
   constructor(opts: ClaudelanceClientOptions) {
     this.publicClient = opts.publicClient;
@@ -149,6 +152,7 @@ export class ClaudelanceClient {
     this.core = opts.core;
     this.tokens = opts.tokens;
     this.identityRegistry = opts.identityRegistry;
+    this.reputationRegistry = opts.reputationRegistry;
   }
 
   /** The wallet address this client signs with, or `undefined` for a read-only client. */
@@ -177,6 +181,7 @@ export class ClaudelanceClient {
       core: deployment.core,
       tokens: deployment.tokens,
       identityRegistry: deployment.identityRegistry,
+      reputationRegistry: deployment.reputationRegistry,
     });
   }
 
@@ -208,6 +213,7 @@ export class ClaudelanceClient {
       core: deployment.core,
       tokens: deployment.tokens,
       identityRegistry: deployment.identityRegistry,
+      reputationRegistry: deployment.reputationRegistry,
     });
   }
 
@@ -338,6 +344,88 @@ export class ClaudelanceClient {
       args: [agent],
     })) as bigint;
     return balance > 0n;
+  }
+
+  /**
+   * Resolve an address's ERC-8004 agent id (its Identity NFT token id). The
+   * registry has no reverse lookup, so this scans the mint `Transfer` event
+   * over a window (default ~2M blocks back; widen via `fromBlock` for older
+   * agents). Returns `null` if no mint to `agent` is found in range.
+   */
+  async agentIdOf(agent: Address, opts?: { fromBlock?: bigint }): Promise<bigint | null> {
+    const latest = await this.publicClient.getBlockNumber();
+    const fromBlock = opts?.fromBlock ?? (latest > 2_000_000n ? latest - 2_000_000n : 0n);
+    const logs = await this.publicClient.getLogs({
+      address: this.identityRegistry,
+      event: IDENTITY_TRANSFER_EVENT,
+      args: { to: agent },
+      fromBlock,
+      toBlock: latest,
+    });
+    const minted = logs.find((l) => (l.args as { from?: Address }).from === ZERO_ADDRESS) ?? logs[0];
+    return (minted?.args as { tokenId?: bigint } | undefined)?.tokenId ?? null;
+  }
+
+  /**
+   * Read an agent's ERC-8004 reputation. Feedback is per-(agent, client), so
+   * this enumerates the agent's clients then summarises across them.
+   * `feedbackCount` is the total number of (non-revoked) feedback entries.
+   */
+  async getReputation(
+    agentId: bigint,
+  ): Promise<{ clients: Address[]; feedbackCount: bigint; score: bigint }> {
+    const clients = (await this.publicClient.readContract({
+      address: this.reputationRegistry,
+      abi: REPUTATION_ABI,
+      functionName: 'getClients',
+      args: [agentId],
+    })) as Address[];
+    if (clients.length === 0) return { clients, feedbackCount: 0n, score: 0n };
+    const [count, score] = (await this.publicClient.readContract({
+      address: this.reputationRegistry,
+      abi: REPUTATION_ABI,
+      functionName: 'getSummary',
+      args: [agentId, clients, '', ''],
+    })) as readonly [bigint, bigint, number];
+    return { clients, feedbackCount: count, score };
+  }
+
+  /**
+   * Give on-chain feedback (reputation) about an agent via the ERC-8004
+   * Reputation Registry. The caller is recorded as the client; it must NOT be
+   * the agent's owner/operator (the registry blocks self-feedback). Defaults
+   * to a +1 positive rating tagged for a resolved Claudelance bounty.
+   */
+  async giveFeedback(
+    agentId: bigint,
+    opts?: {
+      value?: bigint;
+      valueDecimals?: number;
+      tag1?: string;
+      tag2?: string;
+      endpoint?: string;
+      feedbackURI?: string;
+      feedbackHash?: `0x${string}`;
+    },
+  ): Promise<`0x${string}`> {
+    const wallet = this.requireWalletClient();
+    return wallet.writeContract({
+      address: this.reputationRegistry,
+      abi: REPUTATION_ABI,
+      functionName: 'giveFeedback',
+      args: [
+        agentId,
+        opts?.value ?? 1n,
+        opts?.valueDecimals ?? 0,
+        opts?.tag1 ?? 'claudelance',
+        opts?.tag2 ?? 'bounty-resolved',
+        opts?.endpoint ?? '',
+        opts?.feedbackURI ?? '',
+        opts?.feedbackHash ?? `0x${'0'.repeat(64)}`,
+      ],
+      account: wallet.account,
+      chain: wallet.chain,
+    });
   }
 
   /**
@@ -843,5 +931,57 @@ const IDENTITY_REGISTRY_REGISTER_ABI = [
     inputs: [],
     outputs: [{ name: 'agentId', type: 'uint256' }],
     stateMutability: 'nonpayable',
+  },
+] as const;
+
+const IDENTITY_TRANSFER_EVENT = {
+  type: 'event',
+  name: 'Transfer',
+  inputs: [
+    { name: 'from', type: 'address', indexed: true },
+    { name: 'to', type: 'address', indexed: true },
+    { name: 'tokenId', type: 'uint256', indexed: true },
+  ],
+} as const;
+
+const REPUTATION_ABI = [
+  {
+    type: 'function',
+    name: 'giveFeedback',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'value', type: 'int128' },
+      { name: 'valueDecimals', type: 'uint8' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+      { name: 'endpoint', type: 'string' },
+      { name: 'feedbackURI', type: 'string' },
+      { name: 'feedbackHash', type: 'bytes32' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'getClients',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'address[]' }],
+  },
+  {
+    type: 'function',
+    name: 'getSummary',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'clients', type: 'address[]' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+    ],
+    outputs: [
+      { name: 'count', type: 'uint64' },
+      { name: 'score', type: 'int128' },
+      { name: 'avg', type: 'uint8' },
+    ],
   },
 ] as const;
