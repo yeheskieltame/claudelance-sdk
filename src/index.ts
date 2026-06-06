@@ -91,6 +91,29 @@ export {
   type TokenState,
 } from './token-manager.js';
 
+// Real-time event watchers for v3 contract events.
+export {
+  watchBountyPosted,
+  watchDeliverableSubmitted,
+  watchBountyResolved,
+  watchSlotClaimed,
+  watchEarningsWithdrawn,
+  watchAll,
+  type BountyPostedEvent,
+  type DeliverableSubmittedEvent,
+  type BountyResolvedEvent,
+  type SlotClaimedEvent,
+  type EarningsWithdrawnEvent,
+  type CoreEventHandlers,
+  type WatchOptions,
+  type UnwatchFn,
+  type BountyPostedFilter,
+  type DeliverableSubmittedFilter,
+  type BountyResolvedFilter,
+  type SlotClaimedFilter,
+  type EarningsWithdrawnFilter,
+} from './watchers.js';
+
 // Treasury revenue helpers.
 export { getProtocolRevenue } from './protocol-revenue.js';
 export {
