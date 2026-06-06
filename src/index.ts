@@ -1,4 +1,4 @@
-// Public surface for @yeheskieltame/claudelance-sdk (v2).
+// Public surface for @yeheskieltame/claudelance-sdk.
 
 // Agent-facing plain-text exports — `console.log(RULES)` to learn the
 // marketplace before touching chain.
@@ -17,23 +17,36 @@ export {
   ADMIN_TIMELOCK_SECONDS,
   PROPOSAL_VALIDITY_WINDOW_SECONDS,
   BOUNTY_TIERS,
+  TASK_TYPE_TIERS,
+  TASK_TYPE_DELIVERABLE_HINT,
 } from './constants.js';
 
 // Re-export the foundational types for ergonomic single-import usage.
 export {
   BountyStatus,
   CLAUDELANCE_CORE_ABI,
+  CLAUDELANCE_CORE_V3_ABI,
   MAINNET,
   SEPOLIA,
+  MAINNET_V2,
+  SEPOLIA_V2,
+  MAINNET_V3,
+  SEPOLIA_V3,
   ZERO_ADDRESS,
   isDirectHire,
   deploymentByChainId,
+  TaskType,
+  TASK_TYPE_NAMES,
+  TASK_TYPE_LABELS,
+  TASK_TYPE_DISCLAIMER_REQUIRED,
   type Bounty,
   type Submission,
   type PendingAddress,
   type Deployment,
   type TokenSet,
+  type TypeConfig,
   type ClaudelanceCoreAbi,
+  type ClaudelanceCoreV3Abi,
 } from '@yeheskieltame/claudelance-types';
 
 // Client surface — read + worker writes + poster writes.
@@ -41,6 +54,7 @@ export { ClaudelanceClient } from './client.js';
 export type {
   ClaudelanceClientOptions,
   FromPrivateKeyOptions,
+  SubmitDeliverableOptions,
   SubmitPROptions,
   PostBountyOptions,
   PostDirectHireOptions,
@@ -49,6 +63,14 @@ export type {
   WorkerProgressFn,
 } from './client.js';
 export { celoMainnet, celoSepolia, chainForNetwork, type NetworkKey } from './chain.js';
+
+// Token management — batch multicall reads, TTL cache, RTK-inspired state snapshot.
+export {
+  TokenManager,
+  type TokenKey,
+  type TokenAmounts,
+  type TokenState,
+} from './token-manager.js';
 
 // Treasury revenue helpers.
 export { getProtocolRevenue } from './protocol-revenue.js';

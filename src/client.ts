@@ -14,12 +14,14 @@ import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
 
 import {
   CLAUDELANCE_CORE_ABI,
+  CLAUDELANCE_CORE_V3_ABI,
   MAINNET,
   SEPOLIA,
   type Bounty,
   type Deployment,
   type Submission,
   type TokenSet,
+  type TypeConfig,
 } from '@yeheskieltame/claudelance-types';
 
 import { chainForNetwork, type NetworkKey } from './chain.js';
@@ -67,11 +69,26 @@ export type ClaudelanceClientOptions = {
   reputationRegistry: Address;
 };
 
-/** Optional payload accepted by {@link ClaudelanceClient.submitPR}. */
+/**
+ * Payload for {@link ClaudelanceClient.submitDeliverable} (v3).
+ * Works for all task types: GitHub PR, Gist, IPFS/Arweave content, etc.
+ */
+export type SubmitDeliverableOptions = {
+  /** Deliverable URL: GitHub PR, Gist, IPFS CID, Arweave TX, or any verifiable URL. */
+  deliverableUrl: string;
+  /** keccak256 of the deliverable content (or git commit SHA padded to bytes32). */
+  deliverableHash: `0x${string}`;
+  /** Free-form JSON: worker capabilities, model used, task-type metadata, etc. */
+  metadata?: string;
+};
+
+/**
+ * @deprecated Use {@link SubmitDeliverableOptions}. submitPR is v2-only and does
+ * not exist on the v3 contract. This alias is kept for backward compatibility.
+ */
 export type SubmitPROptions = {
   prUrl: string;
   commitHash: `0x${string}`;
-  /** Free-form JSON the worker wants to attach (capabilities, model, notes). */
   metadata?: string;
 };
 
@@ -132,7 +149,11 @@ export type PostDirectHireOptions = {
 };
 
 /**
- * High-level read + write client for ClaudelanceCore v2.
+ * High-level read + write client for ClaudelanceCore (v2 and v3).
+ *
+ * Default target is the v3 UUPS proxy which supports all 10 task types and
+ * `submitDeliverable` (not just GitHub PRs). v2 methods are kept for backward
+ * compat but `submitPR` is deprecated — use `submitDeliverable` instead.
  *
  * Multi-token escrow: every write that moves tokens takes (or infers from
  * the bounty) the ERC20 to use. Workers must be registered ERC-8004 agents
@@ -515,15 +536,31 @@ export class ClaudelanceClient {
     return this.claimSlot(bountyId);
   }
 
-  async submitPR(bountyId: bigint, opts: SubmitPROptions): Promise<`0x${string}`> {
+  /**
+   * Submit a deliverable for any task type (v3). Replaces `submitPR`.
+   * Works for GitHub PRs (type 0), Gist/IPFS/Arweave for all other types.
+   */
+  async submitDeliverable(bountyId: bigint, opts: SubmitDeliverableOptions): Promise<`0x${string}`> {
     const wallet = this.requireWalletClient();
     return wallet.writeContract({
       address: this.core,
-      abi: CLAUDELANCE_CORE_ABI,
-      functionName: 'submitPR',
-      args: [bountyId, opts.prUrl, opts.commitHash, opts.metadata ?? ''],
+      abi: CLAUDELANCE_CORE_V3_ABI,
+      functionName: 'submitDeliverable',
+      args: [bountyId, opts.deliverableUrl, opts.deliverableHash, opts.metadata ?? ''],
       account: wallet.account,
       chain: wallet.chain,
+    });
+  }
+
+  /**
+   * @deprecated v3 contract uses `submitDeliverable`. This wrapper maps v2 field
+   * names to the v3 call so existing code keeps working against the v3 proxy.
+   */
+  async submitPR(bountyId: bigint, opts: SubmitPROptions): Promise<`0x${string}`> {
+    return this.submitDeliverable(bountyId, {
+      deliverableUrl: opts.prUrl,
+      deliverableHash: opts.commitHash,
+      metadata: opts.metadata,
     });
   }
 
@@ -553,17 +590,21 @@ export class ClaudelanceClient {
   }
 
   /**
-   * Convenience: sweep earnings for every whitelisted token in `this.tokens`.
-   * Skips tokens where the wallet has zero balance to save gas.
+   * Convenience: sweep earnings for every whitelisted token.
+   * On v3, the `earnings` mapping is not a public getter, so this attempts
+   * each `withdrawEarnings` and silently skips `NothingToWithdraw` reverts.
    */
   async withdrawAllEarnings(): Promise<Array<{ token: Address; hash: `0x${string}` }>> {
-    const me = this.requireAccount();
     const tokens: Address[] = [this.tokens.cUSD, this.tokens.CELO, this.tokens.USDC];
     const out: Array<{ token: Address; hash: `0x${string}` }> = [];
     for (const t of tokens) {
-      const owed = await this.getEarnings(me, t);
-      if (owed === 0n) continue;
-      out.push({ token: t, hash: await this.withdrawEarnings(t) });
+      try {
+        out.push({ token: t, hash: await this.withdrawEarnings(t) });
+      } catch (err) {
+        const msg = String(err);
+        if (msg.includes('NothingToWithdraw')) continue;
+        throw err;
+      }
     }
     return out;
   }
@@ -609,64 +650,73 @@ export class ClaudelanceClient {
   }
 
   /**
-   * Orchestrator: claim slot (with auto-approval) then submit the PR
+   * Orchestrator: claim slot (with auto-approval) then submit the deliverable
    * in one call. Skips `claimSlot` if the wallet already holds the slot.
-   * Returns both tx hashes (`claimTx` is `null` when the slot was
-   * already claimed before this call).
+   * Returns both tx hashes (`claimTx` is `null` when the slot was already claimed).
    *
-   * Designed for agent runners that want a single function to call
-   * after they've finished writing code and opened a GitHub PR.
+   * Accepts either v3 `SubmitDeliverableOptions` or the legacy v2 `SubmitPROptions` shape.
    */
   async solveAndSubmit(opts: {
     bountyId: bigint;
-    prUrl: string;
-    commitHash: `0x${string}`;
+    /** v3: deliverable URL (GitHub PR, Gist, IPFS, Arweave). */
+    deliverableUrl?: string;
+    /** v3: keccak256 content hash (or commit SHA padded to bytes32). */
+    deliverableHash?: `0x${string}`;
+    /** @deprecated v2 alias for deliverableUrl */
+    prUrl?: string;
+    /** @deprecated v2 alias for deliverableHash */
+    commitHash?: `0x${string}`;
     metadata?: string;
   }): Promise<{ claimTx: `0x${string}` | null; submitTx: `0x${string}` }> {
     const wallet = this.requireWalletClient();
     const me = wallet.account.address;
 
-    const alreadyClaimed = (await this.publicClient.readContract({
-      address: this.core,
-      abi: CLAUDELANCE_CORE_ABI,
-      functionName: 'hasClaimed',
-      args: [opts.bountyId, me],
-    })) as boolean;
-
+    // v3 does not expose hasClaimed as a public getter; attempt claim and catch AlreadyClaimed.
     let claimTx: `0x${string}` | null = null;
-    if (!alreadyClaimed) {
+    try {
       claimTx = await this.claimSlotWithApproval(opts.bountyId);
       await this.publicClient.waitForTransactionReceipt({ hash: claimTx });
+    } catch (err) {
+      const msg = String(err);
+      if (msg.includes('AlreadyClaimed') || msg.includes('already claimed')) {
+        claimTx = null;
+      } else {
+        throw err;
+      }
     }
 
-    const submitTx = await this.submitPR(opts.bountyId, {
-      prUrl: opts.prUrl,
-      commitHash: opts.commitHash,
+    const url = opts.deliverableUrl ?? opts.prUrl ?? '';
+    const hash = opts.deliverableHash ?? opts.commitHash ?? `0x${'0'.repeat(64)}`;
+    const submitTx = await this.submitDeliverable(opts.bountyId, {
+      deliverableUrl: url,
+      deliverableHash: hash as `0x${string}`,
       metadata: opts.metadata,
     });
-    // Wait for the submission to be mined so a caller can safely chain
-    // pickWinner — otherwise it can race ahead of `submittedAt` being set.
     await this.publicClient.waitForTransactionReceipt({ hash: submitTx });
     return { claimTx, submitTx };
   }
 
   /**
-   * Headless worker-side orchestration. Walks the worker through the full
-   * onboarding-to-submission flow with progress events for each on-chain
-   * step. Use this for cold-start workers; use {@link solveAndSubmit} when
-   * the wallet is already registered + approved.
+   * Headless worker-side orchestration for any task type (v3). Walks the worker
+   * through the full onboarding-to-submission flow with progress events.
+   * Use this for cold-start workers; use {@link solveAndSubmit} when already set up.
    *
    * Stages emitted in order:
    *   1. ensure-identity — mints ERC-8004 Identity NFT if missing
    *   2. approve         — approves Core to pull token stake (skipped if already max)
    *   3. claim           — claimSlot(bountyId) (skipped if already claimed)
-   *   4. submit          — submitPR(bountyId, ...)
+   *   4. submit          — submitDeliverable(bountyId, ...)
    *   5. done            — terminal event with the final submit tx hash
    */
   async runWorkerLoop(opts: {
     bountyId: bigint;
-    prUrl: string;
-    commitHash: `0x${string}`;
+    /** Deliverable URL: GitHub PR, Gist, IPFS CID, Arweave TX, etc. */
+    deliverableUrl?: string;
+    deliverableHash?: `0x${string}`;
+    /** @deprecated Use deliverableUrl */
+    prUrl?: string;
+    /** @deprecated Use deliverableHash */
+    commitHash?: `0x${string}`;
     metadata?: string;
     onProgress?: WorkerProgressFn;
   }): Promise<{
@@ -675,8 +725,6 @@ export class ClaudelanceClient {
     submitTx: `0x${string}`;
   }> {
     const emit = opts.onProgress ?? (() => {});
-    const wallet = this.requireWalletClient();
-    const me = wallet.account.address;
 
     emit({ stage: "ensure-identity" });
     const identityRes = await this.ensureIdentity();
@@ -684,34 +732,30 @@ export class ClaudelanceClient {
       ? (`0x${identityRes.tokenId.toString(16)}` as `0x${string}`)
       : null;
 
-    const alreadyClaimed = (await this.publicClient.readContract({
-      address: this.core,
-      abi: CLAUDELANCE_CORE_ABI,
-      functionName: "hasClaimed",
-      args: [opts.bountyId, me],
-    })) as boolean;
-
     let claimTx: `0x${string}` | null = null;
-    if (!alreadyClaimed) {
-      // claimSlotWithApproval approves exactly the bounty's token for the
-      // stake (one approval, and only when the allowance is short) then claims.
-      // Pre-approving all three tokens would waste two tx for a one-shot worker.
+    try {
       emit({ stage: "approve" });
       claimTx = await this.claimSlotWithApproval(opts.bountyId);
       emit({ stage: "claim", tx: claimTx });
       await this.publicClient.waitForTransactionReceipt({ hash: claimTx });
-    } else {
-      emit({ stage: "claim", detail: "already-claimed" });
+    } catch (err) {
+      const msg = String(err);
+      if (msg.includes('AlreadyClaimed') || msg.includes('already claimed')) {
+        emit({ stage: "claim", detail: "already-claimed" });
+        claimTx = null;
+      } else {
+        throw err;
+      }
     }
 
-    const submitTx = await this.submitPR(opts.bountyId, {
-      prUrl: opts.prUrl,
-      commitHash: opts.commitHash,
+    const url = opts.deliverableUrl ?? opts.prUrl ?? '';
+    const hash = opts.deliverableHash ?? opts.commitHash ?? `0x${'0'.repeat(64)}`;
+    const submitTx = await this.submitDeliverable(opts.bountyId, {
+      deliverableUrl: url,
+      deliverableHash: hash as `0x${string}`,
       metadata: opts.metadata,
     });
     emit({ stage: "submit", tx: submitTx });
-    // Wait for the submission to be mined before signalling done, so the
-    // poster can chain pickWinner without racing `submittedAt`.
     await this.publicClient.waitForTransactionReceipt({ hash: submitTx });
     emit({ stage: "done", tx: submitTx });
 
@@ -866,6 +910,106 @@ export class ClaudelanceClient {
       account: wallet.account,
       chain: wallet.chain,
     });
+  }
+
+  // ─── v3 read API ─────────────────────────────────────────────────────
+
+  /**
+   * Extended stats with per-task-type resolved counts (v3 only).
+   * Returns the same 5 fields as `getStats` plus `countByType[11]`.
+   */
+  async getStatsV3(token: Address): Promise<{
+    volume: bigint;
+    revenue: bigint;
+    resolved: bigint;
+    posters: bigint;
+    workers: bigint;
+    countByType: readonly bigint[];
+  }> {
+    const [volume, revenue, resolved, posters, workers, countByType] =
+      (await this.publicClient.readContract({
+        address: this.core,
+        abi: CLAUDELANCE_CORE_V3_ABI,
+        functionName: 'getStatsV3',
+        args: [token],
+      })) as readonly [bigint, bigint, bigint, bigint, bigint, readonly bigint[]];
+    return { volume, revenue, resolved, posters, workers, countByType };
+  }
+
+  /** All workers who have claimed a slot on a bounty (v3). */
+  async getClaimers(bountyId: bigint): Promise<Address[]> {
+    return (await this.publicClient.readContract({
+      address: this.core,
+      abi: CLAUDELANCE_CORE_V3_ABI,
+      functionName: 'getClaimers',
+      args: [bountyId],
+    })) as Address[];
+  }
+
+  /**
+   * Workers with a submitted deliverable that is eligible for `pickWinner`
+   * (submitted, and CI passed if `ciRequired`) (v3).
+   */
+  async getEligibleSubmissions(bountyId: bigint): Promise<Address[]> {
+    return (await this.publicClient.readContract({
+      address: this.core,
+      abi: CLAUDELANCE_CORE_V3_ABI,
+      functionName: 'getEligibleSubmissions',
+      args: [bountyId],
+    })) as Address[];
+  }
+
+  /** On-chain configuration for a task type (v3). */
+  async getTaskTypeConfig(typeId: number): Promise<TypeConfig> {
+    return (await this.publicClient.readContract({
+      address: this.core,
+      abi: CLAUDELANCE_CORE_V3_ABI,
+      functionName: 'getTaskTypeConfig',
+      args: [typeId],
+    })) as TypeConfig;
+  }
+
+  /**
+   * Register or update a task type configuration (v3, owner-only).
+   * Types 0–10 are pre-configured at deploy; use this to enable custom types or
+   * adjust `disclaimerRequired` / `ciSupported` flags.
+   */
+  async configureTaskType(typeId: number, config: TypeConfig): Promise<`0x${string}`> {
+    const wallet = this.requireWalletClient();
+    return wallet.writeContract({
+      address: this.core,
+      abi: CLAUDELANCE_CORE_V3_ABI,
+      functionName: 'configureTaskType',
+      args: [typeId, config],
+      account: wallet.account,
+      chain: wallet.chain,
+    });
+  }
+
+  /**
+   * Total bounty count (v3 proxy, binary-search approach).
+   * v3 does not expose bountyCount as a public getter (EIP-7201 namespaced storage).
+   * This scans geometrically then binary-searches for the highest valid ID.
+   * Result is approximate if bounties are cancelled (IDs are never reused).
+   */
+  async getBountyCountV3(): Promise<bigint> {
+    const isValid = async (id: bigint): Promise<boolean> => {
+      const b = await this.getBounty(id);
+      return (b as { poster: string }).poster !== ZERO_ADDRESS;
+    };
+
+    if (!(await isValid(1n))) return 0n;
+
+    let hi = 1n;
+    while (await isValid(hi)) hi *= 2n;
+
+    let lo = hi / 2n;
+    while (lo + 1n < hi) {
+      const mid = (lo + hi) / 2n;
+      if (await isValid(mid)) lo = mid;
+      else hi = mid;
+    }
+    return lo;
   }
 
   // ─── Internal helpers ────────────────────────────────────────────────
