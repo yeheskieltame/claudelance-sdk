@@ -394,24 +394,40 @@ export class ClaudelanceClient {
     const [volume, revenue, resolved, posters, workers] =
       (await this.publicClient.readContract({
         address: this.core,
-        abi: CLAUDELANCE_CORE_ABI,
+        abi: CLAUDELANCE_CORE_V3_ABI,
         functionName: 'getStats',
         args: [token],
       })) as readonly [bigint, bigint, bigint, bigint, bigint];
     return { volume, revenue, resolved, posters, workers };
   }
 
-  /** Pending earnings for an address in a specific token. */
+  /**
+   * Pending earnings for an address in a specific token.
+   *
+   * v2 only: reads the `earnings(address, token)` public mapping getter.
+   * On v3 this getter does not exist (EIP-7201 storage). For v3, earnings
+   * are opaque until `withdrawEarnings` is called — use `EarningsWithdrawn`
+   * event logs via `listProtocolRevenueEvents` or `watchEarningsWithdrawn`
+   * to audit past withdrawals.
+   */
   async getEarnings(account: Address, token: Address): Promise<bigint> {
-    return (await this.publicClient.readContract({
-      address: this.core,
-      abi: CLAUDELANCE_CORE_ABI,
-      functionName: 'earnings',
-      args: [account, token],
-    })) as bigint;
+    try {
+      return (await this.publicClient.readContract({
+        address: this.core,
+        abi: CLAUDELANCE_CORE_ABI,
+        functionName: 'earnings',
+        args: [account, token],
+      })) as bigint;
+    } catch {
+      // v3 does not expose the earnings mapping as a public getter.
+      return 0n;
+    }
   }
 
-  /** Pending earnings for the wallet account in a specific token. */
+  /**
+   * Pending earnings for the connected wallet in a specific token.
+   * Returns 0 on v3 (earnings not readable — see `getEarnings` for details).
+   */
   async getMyEarnings(token: Address): Promise<bigint> {
     return this.getEarnings(this.requireAccount(), token);
   }
