@@ -37,8 +37,23 @@ export type TokenState = {
   fetchedAt: number;
 };
 
-const MIN_BOUNTY_TOPIC =
-  '0x' + 'MinBountyUpdated(address,uint256)'.length.toString().padStart(64, '0');
+export type TokenManagerOptions = {
+  publicClient: PublicClient;
+  core: Address;
+  tokens: TokenSet;
+  /**
+   * Starting block for `TokenAllowed`/`MinBountyUpdated` event scans.
+   * Defaults to 68_143_824 (Celo mainnet Claudelance v2 deploy block).
+   * Set to 0n for Sepolia or custom deployments.
+   */
+  deployBlock?: bigint;
+};
+
+// v3 mainnet proxy deployed at block 68,536,240 (2026-06-04).
+// v2 mainnet deployed at block 68,143,824 (2026-05-14).
+// Use v2 deploy block as the safe lower bound — no allowToken events exist before it.
+const CLAUDELANCE_MAINNET_DEPLOY_BLOCK = 68_143_824n;
+const CLAUDELANCE_SEPOLIA_DEPLOY_BLOCK = 0n; // Sepolia block numbers differ; scan all.
 
 const TOKEN_ALLOWED_ABI = [
   {
@@ -76,15 +91,17 @@ export class TokenManager {
   readonly publicClient: PublicClient;
   readonly core: Address;
   readonly tokens: TokenSet;
+  readonly deployBlock: bigint;
 
   // minBounties are admin-set and rarely change; cache with 10-min TTL.
   private _minBountyCache: { amounts: TokenAmounts; fetchedAt: number } | null = null;
   private readonly MIN_BOUNTY_TTL_MS = 10 * 60 * 1000;
 
-  constructor(opts: { publicClient: PublicClient; core: Address; tokens: TokenSet }) {
+  constructor(opts: TokenManagerOptions) {
     this.publicClient = opts.publicClient;
     this.core = opts.core;
     this.tokens = opts.tokens;
+    this.deployBlock = opts.deployBlock ?? CLAUDELANCE_MAINNET_DEPLOY_BLOCK;
   }
 
   private get tokenEntries(): Array<[TokenKey, Address]> {
@@ -159,13 +176,13 @@ export class TokenManager {
           address: this.core,
           event: TOKEN_ALLOWED_ABI[0],
           args: { token: tokenAddr },
-          fromBlock: 0n,
+          fromBlock: this.deployBlock,
         }).catch(() => []),
         this.publicClient.getLogs({
           address: this.core,
           event: TOKEN_ALLOWED_ABI[1],
           args: { token: tokenAddr },
-          fromBlock: 0n,
+          fromBlock: this.deployBlock,
         }).catch(() => []),
       ]);
 
@@ -236,5 +253,3 @@ export class TokenManager {
   }
 }
 
-// Re-export for consumers importing from the SDK.
-export { CUSD_ABI };
