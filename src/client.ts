@@ -26,6 +26,11 @@ import {
 
 import { chainForNetwork, type NetworkKey } from './chain.js';
 import { CUSD_ABI } from './cusd-abi.js';
+import {
+  throwTyped,
+  AlreadyClaimedError,
+  NothingToWithdrawError,
+} from './errors.js';
 
 // setTimeout is a runtime global in both Node and browsers, but the SDK's
 // tsconfig keeps `lib` to ES2022 (no DOM/node) to stay portable, so declare it.
@@ -601,9 +606,8 @@ export class ClaudelanceClient {
       try {
         out.push({ token: t, hash: await this.withdrawEarnings(t) });
       } catch (err) {
-        const msg = String(err);
-        if (msg.includes('NothingToWithdraw')) continue;
-        throw err;
+        if (err instanceof NothingToWithdrawError) continue;
+        throwTyped(err);
       }
     }
     return out;
@@ -677,11 +681,10 @@ export class ClaudelanceClient {
       claimTx = await this.claimSlotWithApproval(opts.bountyId);
       await this.publicClient.waitForTransactionReceipt({ hash: claimTx });
     } catch (err) {
-      const msg = String(err);
-      if (msg.includes('AlreadyClaimed') || msg.includes('already claimed')) {
+      if (err instanceof AlreadyClaimedError) {
         claimTx = null;
       } else {
-        throw err;
+        throwTyped(err, { bountyId: opts.bountyId });
       }
     }
 
@@ -739,12 +742,11 @@ export class ClaudelanceClient {
       emit({ stage: "claim", tx: claimTx });
       await this.publicClient.waitForTransactionReceipt({ hash: claimTx });
     } catch (err) {
-      const msg = String(err);
-      if (msg.includes('AlreadyClaimed') || msg.includes('already claimed')) {
+      if (err instanceof AlreadyClaimedError) {
         emit({ stage: "claim", detail: "already-claimed" });
         claimTx = null;
       } else {
-        throw err;
+        throwTyped(err, { bountyId: opts.bountyId });
       }
     }
 
