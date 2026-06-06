@@ -91,6 +91,17 @@ export {
   type TokenState,
 } from './token-manager.js';
 
+// Filtered + paginated bounty list (v3).
+export {
+  listBounties,
+  listOpenBountiesByType,
+  listBountiesByPoster,
+  listClaimableByWorker,
+  type ListBountiesOptions,
+  type BountyPage,
+  type BountyWithId,
+} from './list-bounties.js';
+
 // Real-time event watchers for v3 contract events.
 export {
   watchBountyPosted,

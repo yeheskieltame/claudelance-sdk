@@ -92,7 +92,7 @@ export async function listBounties(
   const matched: BountyWithId[] = [];
   for (let idx = 0; idx < results.length; idx++) {
     const r = results[idx];
-    if (r.status === 'failure') continue;
+    if (!r || r.status === 'failure') continue;
     const b = r.result as Bounty;
     if (!b || (b as { poster?: string }).poster === ZERO_ADDRESS) continue;
 
