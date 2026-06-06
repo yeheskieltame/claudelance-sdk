@@ -64,6 +64,25 @@ export type {
 } from './client.js';
 export { celoMainnet, celoSepolia, chainForNetwork, type NetworkKey } from './chain.js';
 
+// Typed error classes — catch ClaudelanceError or specific subclasses.
+export {
+  ClaudelanceError,
+  InsufficientFundsError,
+  AlreadyClaimedError,
+  NotTargetWorkerError,
+  NoAgentIdentityError,
+  NothingToWithdrawError,
+  BountyNotOpenError,
+  DeadlinePassedError,
+  TaskTypeNotEnabledError,
+  TokenNotAllowedError,
+  AlreadySubmittedError,
+  WinnerInvalidError,
+  parseContractError,
+  throwTyped,
+  type ClaudelanceErrorContext,
+} from './errors.js';
+
 // Token management — batch multicall reads, TTL cache, RTK-inspired state snapshot.
 export {
   TokenManager,
