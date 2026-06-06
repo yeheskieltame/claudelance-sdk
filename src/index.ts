@@ -54,6 +54,7 @@ export { ClaudelanceClient } from './client.js';
 export type {
   ClaudelanceClientOptions,
   FromPrivateKeyOptions,
+  FromMnemonicOptions,
   SubmitDeliverableOptions,
   SubmitPROptions,
   PostBountyOptions,

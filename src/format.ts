@@ -1,4 +1,4 @@
-import type { Bounty } from '@yeheskieltame/claudelance-types';
+import { TASK_TYPE_NAMES, type Bounty } from '@yeheskieltame/claudelance-types';
 
 /**
  * Convert a token wei amount (bigint) to a plain number for UI / log lines.
@@ -68,13 +68,15 @@ export function formatBountySummary(
   const ci = bounty.ciRequired ? 'CI required' : 'no CI';
   const ZERO = '0x0000000000000000000000000000000000000000';
   const mode = bounty.targetWorker.toLowerCase() === ZERO ? 'OPEN' : `DIRECT->${bounty.targetWorker.slice(0, 8)}`;
+  const typeLabel = TASK_TYPE_NAMES[bounty.bountyType as keyof typeof TASK_TYPE_NAMES] ?? `type${bounty.bountyType}`;
   return [
     `Bounty #${bounty.id} ${statusLabel}`,
+    typeLabel,
     mode,
     tokenFormat(bounty.amount, tokenSymbol, { decimals: tokenDecimals }),
     `${bounty.claimedSlots}/${bounty.maxSlots} slots`,
     left,
     ci,
-    `repo: ${bounty.targetRepoUrl}`,
+    `spec: ${bounty.instructionUrl || bounty.targetRepoUrl}`,
   ].join(' | ');
 }
