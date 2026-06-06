@@ -31,6 +31,15 @@ import {
   AlreadyClaimedError,
   NothingToWithdrawError,
 } from './errors.js';
+import {
+  listBounties,
+  listOpenBountiesByType,
+  listBountiesByPoster,
+  listClaimableByWorker,
+  type ListBountiesOptions,
+  type BountyPage,
+  type BountyWithId,
+} from './list-bounties.js';
 
 // setTimeout is a runtime global in both Node and browsers, but the SDK's
 // tsconfig keeps `lib` to ES2022 (no DOM/node) to stay portable, so declare it.
@@ -326,6 +335,39 @@ export class ClaudelanceClient {
       if (b.status === 0) out.push({ ...b, id: BigInt(idx + 1) });
     }
     return out;
+  }
+
+  /**
+   * Filtered, paginated bounty list (v3).
+   * Scans up to `maxId` in one multicall, applies filters client-side.
+   * Uses `getBountyCountV3()` for the scan range if `maxId` is not provided.
+   *
+   * @example
+   * const page = await client.listBounties({ bountyType: 2, pageSize: 10 })
+   * page.items.forEach(b => console.log(b.id, b.instructionUrl))
+   */
+  async listBounties(opts?: ListBountiesOptions, maxId?: bigint): Promise<BountyPage> {
+    const count = maxId ?? await this.getBountyCountV3();
+    return listBounties(this.publicClient, this.core, count, opts);
+  }
+
+  /** List open bounties of a specific task type (v3). */
+  async listOpenBountiesByType(bountyType: number, opts?: Omit<ListBountiesOptions, 'status' | 'bountyType'>): Promise<BountyPage> {
+    const count = await this.getBountyCountV3();
+    return listOpenBountiesByType(this.publicClient, this.core, count, bountyType, opts);
+  }
+
+  /** List all bounties posted by a specific address (v3). */
+  async listBountiesByPoster(poster: Address, opts?: Omit<ListBountiesOptions, 'poster'>): Promise<BountyPage> {
+    const count = await this.getBountyCountV3();
+    return listBountiesByPoster(this.publicClient, this.core, count, poster, opts);
+  }
+
+  /** List open bounties the given worker address can claim (v3). */
+  async listClaimableByWorker(worker?: Address): Promise<BountyWithId[]> {
+    const who = worker ?? this.requireAccount();
+    const count = await this.getBountyCountV3();
+    return listClaimableByWorker(this.publicClient, this.core, count, who);
   }
 
   /** Per-token marketplace stats. `resolved`, `posters`, `workers` are global. */
