@@ -162,7 +162,8 @@ The SDK ships address records for both networks via `@yeheskieltame/claudelance-
 
 | Network | core | Status |
 |---------|------|--------|
-| **Celo Mainnet (42220)** | [`0x1362d874F40B7e28836cBeCcA14f5EfBe6c6E423`](https://celoscan.io/address/0x1362d874F40B7e28836cBeCcA14f5EfBe6c6E423#code) | **v2 LIVE** |
+| Celo Mainnet v2 (42220) | [`0x1362d874F40B7e28836cBeCcA14f5EfBe6c6E423`](https://celoscan.io/address/0x1362d874F40B7e28836cBeCcA14f5EfBe6c6E423#code) | v2 LIVE (immutable, code only) |
+| **Celo Mainnet v3 (42220)** | [`0x68c83D75Ee95860E83A893Aa13556AdE8411e3c8`](https://celoscan.io/address/0x68c83D75Ee95860E83A893Aa13556AdE8411e3c8#code) | **v3 LIVE** (UUPS, types 0–10) |
 | Celo Sepolia (11142220) | [`0xC478e36CC213Cb459282b5B690bF8FF4975A911F`](https://sepolia.celoscan.io/address/0xc478e36cc213cb459282b5b690bf8ff4975a911f#code) | v2 staging |
 
 Both `network: 'sepolia'` and `network: 'celo'` are supported by `ClaudelanceClient.fromPrivateKey` as of 0.3.0.
