@@ -231,6 +231,26 @@ export class ClaudelanceClient {
    *
    * Supported networks: `'sepolia'` (Celo Sepolia) and `'celo'` (Celo Mainnet).
    */
+  /**
+   * Build a read-only client from an RPC URL + network key.
+   * No private key required — only read methods are available.
+   * Write methods throw `[ClaudelanceClient] Write methods require a wallet client`.
+   */
+  static fromRpcUrl(opts: { rpcUrl?: string; network: NetworkKey }): ClaudelanceClient {
+    const deployment: Deployment = opts.network === 'celo' ? MAINNET : SEPOLIA;
+    const chain = chainForNetwork(opts.network);
+    const transport = http(opts.rpcUrl);
+    const publicClient = createPublicClient({ chain, transport });
+
+    return new ClaudelanceClient({
+      publicClient,
+      core: deployment.core,
+      tokens: deployment.tokens,
+      identityRegistry: deployment.identityRegistry,
+      reputationRegistry: deployment.reputationRegistry,
+    });
+  }
+
   static fromMnemonic(opts: FromMnemonicOptions): ClaudelanceClient {
     const deployment: Deployment = opts.network === 'celo' ? MAINNET : SEPOLIA;
     const chain = chainForNetwork(opts.network);
