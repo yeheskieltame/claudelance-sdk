@@ -257,7 +257,7 @@ export class ClaudelanceClient {
   async getBounty(bountyId: bigint): Promise<Bounty> {
     return (await this.publicClient.readContract({
       address: this.core,
-      abi: CLAUDELANCE_CORE_ABI,
+      abi: CLAUDELANCE_CORE_V3_ABI,
       functionName: 'getBounty',
       args: [bountyId],
     })) as Bounty;
@@ -265,12 +265,13 @@ export class ClaudelanceClient {
 
   /**
    * A worker's submission for a bounty, including the relayer's CI verdict.
-   * `submittedAt === 0n` means the worker has not submitted a PR.
+   * v3: fields are `deliverableUrl` + `deliverableHash` (not prUrl/commitHash).
+   * `submittedAt === 0n` means the worker has not submitted yet.
    */
   async getSubmission(bountyId: bigint, worker: Address): Promise<Submission> {
     return (await this.publicClient.readContract({
       address: this.core,
-      abi: CLAUDELANCE_CORE_ABI,
+      abi: CLAUDELANCE_CORE_V3_ABI,
       functionName: 'getSubmission',
       args: [bountyId, worker],
     })) as Submission;
@@ -299,39 +300,51 @@ export class ClaudelanceClient {
     return bounty;
   }
 
+  /**
+   * Total bounty count. On v2, reads the `bountyCount` public getter.
+   * On v3 (EIP-7201 storage, no public getter), falls back to `getBountyCountV3`.
+   *
+   * For new code targeting v3, prefer `getBountyCountV3()` directly.
+   */
   async getBountyCount(): Promise<bigint> {
-    return (await this.publicClient.readContract({
-      address: this.core,
-      abi: CLAUDELANCE_CORE_ABI,
-      functionName: 'bountyCount',
-    })) as bigint;
+    try {
+      return (await this.publicClient.readContract({
+        address: this.core,
+        abi: CLAUDELANCE_CORE_ABI,
+        functionName: 'bountyCount',
+      })) as bigint;
+    } catch {
+      return this.getBountyCountV3();
+    }
   }
 
   /**
-   * Return every currently-open bounty. Linear scan via multicall — fine for
-   * the hackathon scope (hundreds at most).
+   * Return every currently-open bounty via multicall.
+   * Uses `getBountyCountV3` for scan range on v3 (binary search, O(log n)).
    */
   async listOpenBounties(): Promise<Array<Bounty & { id: bigint }>> {
-    const count = await this.getBountyCount();
+    const count = await this.getBountyCountV3();
     if (count === 0n) return [];
 
     const calls = [];
     for (let i = 1n; i <= count; i++) {
       calls.push({
         address: this.core,
-        abi: CLAUDELANCE_CORE_ABI,
+        abi: CLAUDELANCE_CORE_V3_ABI,
         functionName: 'getBounty' as const,
         args: [i] as const,
       });
     }
     const results = await this.publicClient.multicall({
       contracts: calls,
-      allowFailure: false,
+      allowFailure: true,
     });
 
     const out: Array<Bounty & { id: bigint }> = [];
     for (let idx = 0; idx < results.length; idx++) {
-      const b = results[idx] as Bounty;
+      const r = results[idx];
+      if (!r || r.status === 'failure') continue;
+      const b = r.result as Bounty;
       if (b.status === 0) out.push({ ...b, id: BigInt(idx + 1) });
     }
     return out;
