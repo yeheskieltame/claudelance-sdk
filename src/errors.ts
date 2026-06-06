@@ -19,16 +19,17 @@ export type ClaudelanceErrorContext = {
 
 /** Base class for all Claudelance SDK errors. */
 export class ClaudelanceError extends Error {
+  override readonly name: string = 'ClaudelanceError';
   readonly bountyId?: bigint;
   readonly tx?: `0x${string}`;
-  readonly cause?: unknown;
+  override readonly cause?: unknown;
 
   constructor(message: string, ctx?: ClaudelanceErrorContext) {
-    super(message);
-    this.name = 'ClaudelanceError';
+    super(message, ctx?.cause !== undefined ? { cause: ctx.cause } : undefined);
+    // Restore prototype chain for instanceof checks in transpiled environments.
+    Object.setPrototypeOf(this, new.target.prototype);
     this.bountyId = ctx?.bountyId;
     this.tx = ctx?.tx;
-    this.cause = ctx?.cause;
   }
 }
 
@@ -43,7 +44,6 @@ export class InsufficientFundsError extends ClaudelanceError {
       `Insufficient ${token}: need ${required}, have ${available}`,
       ctx,
     );
-    this.name = 'InsufficientFundsError';
     this.token = token;
     this.required = required;
     this.available = available;
@@ -57,7 +57,6 @@ export class AlreadyClaimedError extends ClaudelanceError {
       `Already claimed a slot on bounty${ctx?.bountyId !== undefined ? ` #${ctx.bountyId}` : ''}`,
       ctx,
     );
-    this.name = 'AlreadyClaimedError';
   }
 }
 
@@ -68,7 +67,6 @@ export class NotTargetWorkerError extends ClaudelanceError {
       `Not the target worker for bounty${ctx?.bountyId !== undefined ? ` #${ctx.bountyId}` : ''}`,
       ctx,
     );
-    this.name = 'NotTargetWorkerError';
   }
 }
 
@@ -79,7 +77,6 @@ export class NoAgentIdentityError extends ClaudelanceError {
       'Wallet does not hold an ERC-8004 Identity NFT — call ensureIdentity() first',
       ctx,
     );
-    this.name = 'NoAgentIdentityError';
   }
 }
 
@@ -87,7 +84,6 @@ export class NoAgentIdentityError extends ClaudelanceError {
 export class NothingToWithdrawError extends ClaudelanceError {
   constructor(ctx?: ClaudelanceErrorContext) {
     super('No pending earnings for this token', ctx);
-    this.name = 'NothingToWithdrawError';
   }
 }
 
@@ -98,7 +94,6 @@ export class BountyNotOpenError extends ClaudelanceError {
       `Bounty${ctx?.bountyId !== undefined ? ` #${ctx.bountyId}` : ''} is not open`,
       ctx,
     );
-    this.name = 'BountyNotOpenError';
   }
 }
 
@@ -109,7 +104,6 @@ export class DeadlinePassedError extends ClaudelanceError {
       `Bounty${ctx?.bountyId !== undefined ? ` #${ctx.bountyId}` : ''} deadline has passed`,
       ctx,
     );
-    this.name = 'DeadlinePassedError';
   }
 }
 
@@ -119,7 +113,6 @@ export class TaskTypeNotEnabledError extends ClaudelanceError {
 
   constructor(typeId: number, ctx?: ClaudelanceErrorContext) {
     super(`Task type ${typeId} is not enabled on this contract`, ctx);
-    this.name = 'TaskTypeNotEnabledError';
     this.typeId = typeId;
   }
 }
@@ -130,7 +123,6 @@ export class TokenNotAllowedError extends ClaudelanceError {
 
   constructor(token: string, ctx?: ClaudelanceErrorContext) {
     super(`Token ${token} is not whitelisted — call allowToken() via owner`, ctx);
-    this.name = 'TokenNotAllowedError';
     this.token = token;
   }
 }
@@ -142,7 +134,6 @@ export class AlreadySubmittedError extends ClaudelanceError {
       `Deliverable already submitted for bounty${ctx?.bountyId !== undefined ? ` #${ctx.bountyId}` : ''}`,
       ctx,
     );
-    this.name = 'AlreadySubmittedError';
   }
 }
 
@@ -153,7 +144,6 @@ export class WinnerInvalidError extends ClaudelanceError {
       `Winner is invalid for bounty${ctx?.bountyId !== undefined ? ` #${ctx.bountyId}` : ''} — check submission and CI status`,
       ctx,
     );
-    this.name = 'WinnerInvalidError';
   }
 }
 
